@@ -6,6 +6,7 @@ import cats.effect.std.Env
 import cats.syntax.all.*
 import com.gu.words.capi.{ContentService, IOCapiClient}
 import com.gu.words.model.{YearMonth, yearMonth}
+import com.gu.words.store.FileStore
 
 import java.nio.file.Path
 import java.time.LocalDate
@@ -23,7 +24,7 @@ object Main extends IOApp {
     _ <- EitherT.right {
       for {
         capiClient <- IOCapiClient.from(apiKey)
-        service = new ExtractorService(Path.of("output"), new ContentService(capiClient))
+        service = new ExtractorService(Path.of("output"), new ContentService(capiClient), new FileStore)
         (startDate, endDate) = dates
         _ <- service.process(startDate, endDate).logTime(s"Processing $startDate to $endDate")
       } yield ()

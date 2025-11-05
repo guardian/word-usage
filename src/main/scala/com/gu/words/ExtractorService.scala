@@ -1,26 +1,22 @@
 package com.gu.words
 
-import cats.data.*
+import cats.data.EitherT
 import cats.effect.*
 import cats.syntax.all.*
 import com.gu.time.duration.formatting.*
 import com.gu.words.capi.ContentService
 import com.gu.words.model.YearMonth
 import com.gu.words.reports.{DayReport, MonthReport, WordUsage, given}
-import kantan.csv.ops.*
+import com.gu.words.store.Store
 import kantan.csv.*
 
-import java.io.BufferedInputStream
-import java.nio.file.Files.{newInputStream, newOutputStream}
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.{Files, Path}
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit.MILLIS
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 import scala.collection.immutable.SortedMap
+import scala.concurrent.duration.DurationInt
 import scala.jdk.DurationConverters.*
 import scala.language.postfixOps
-import scala.util.Random
 
 extension (path: Path)
   def addExtension(suffix: String): Path = path.resolveSibling(s"${path.getFileName}.$suffix")
@@ -30,11 +26,11 @@ extension [T] (io: IO[T])
     case (d, v) => IO.println(s"$desc ...finished in ${d.toJava.truncatedTo(MILLIS).format()}") >> IO.pure(v)
   }
 
-  def logSlow(desc: String, threshold: scala.concurrent.duration.FiniteDuration): IO[T] = io.timed.flatMap {
+  def logIfSlow(desc: String, threshold: scala.concurrent.duration.FiniteDuration = 1.millis): IO[T] = io.timed.flatMap {
     case (d, v) => IO.whenA(d > threshold)(IO.println(s"$desc ...finished in ${d.toJava.truncatedTo(MILLIS).format()}")) >> IO.pure(v)
   }
 
-class ExtractorService(folder: Path, contentService: ContentService) {
+class ExtractorService(folder: Path, contentService: ContentService, store: Store) {
 
   def pathFor(yearMonth: YearMonth): Path = folder.resolve(f"day-month-data/${yearMonth.year}/${yearMonth.month.getValue}%02d.csv.gz")
 
@@ -55,24 +51,9 @@ class ExtractorService(folder: Path, contentService: ContentService) {
             IO.blocking(WordUsage.writeSummary(path, seen))).logTime("Write summary") >>
           seen.toSeq.filter(_._2.count >= 10000).traverse {
             case (word, wordUsage) =>
-              writeCompressed(pathForDetailedWordReport(word), wordUsage.detailedUsageCsvRows)
+              store.write(pathForDetailedWordReport(word), wordUsage.detailedUsageCsvRows)
           }.logTime("Write detailed word reports")
     }.void
-
-  def writeCompressed[B: HeaderEncoder](path: Path, rows: IterableOnce[B]): IO[Unit] =
-    IO.blocking(Files.createDirectories(path.getParent)) >> {
-      val tmpPath = path.addExtension(s"${Random.alphanumeric.take(5).mkString}.tmp")
-      Resource.fromAutoCloseable(IO.blocking(new GZIPOutputStream(newOutputStream(tmpPath)))).use {
-        outputStream => IO.blocking(outputStream.writeCsv(rows, rfc))
-      } >> IO.blocking(Files.move(tmpPath, path, REPLACE_EXISTING))
-    }
-
-  def readCompressed[B: HeaderDecoder](path: Path): IO[Seq[B]] = {
-    val punk = 8 * 1024
-    Resource.fromAutoCloseable(IO.blocking(new BufferedInputStream(new GZIPInputStream(newInputStream(path), punk), 4 * punk))).use {
-      outputStream => IO.blocking(outputStream.readCsv[Seq, B](rfc).flatMap(_.toOption))
-    }
-  }
 
   private def integrateMonthDataAndUpdateSeenWordsReport(
     previouslySeen: Map[Word, WordUsage],
@@ -89,7 +70,7 @@ class ExtractorService(folder: Path, contentService: ContentService) {
   } yield word -> previouslySeen.get(word).fold(WordUsage.fromFirstOccurrenceInRun(yearMonth, occ))(_.add(yearMonth, occ)))
 
   private def writeMonthReport(yearMonth: YearMonth, monthReport: MonthReport): IO[Unit] =
-    writeCompressed(pathFor(yearMonth), monthReport.csvRows).logTime(s"$yearMonth : Storing to disk")
+    store.write(pathFor(yearMonth), monthReport.csvRows).logTime(s"$yearMonth : Storing to disk")
 
   def fetchFromCapiOrLoadFromCache(yearMonth: YearMonth): EitherT[IO, Map[LocalDate, DayReport], MonthReport] =
     EitherT.right(IO.blocking(Files.isRegularFile(pathFor(yearMonth)))).flatMap { fileExists =>
@@ -99,5 +80,5 @@ class ExtractorService(folder: Path, contentService: ContentService) {
     }
 
   private def loadCachedFile(yearMonth: YearMonth): IO[MonthReport] =
-    readCompressed(pathFor(yearMonth)).map(s => MonthReport(s.toMap)).logTime(s"$yearMonth : Loading from disk")
+    store.read(pathFor(yearMonth)).map(s => MonthReport(s.toMap)).logTime(s"$yearMonth : Loading from disk")
 }

@@ -11,7 +11,7 @@ final class TokenBucket private (
   refillAmount: Long,
   refillPeriod: FiniteDuration
 ) {
-  def take: IO[Unit] = sem.acquire
+  def enforceWithDelay: IO[Unit] = sem.acquire
 
   private def refillLoop: IO[Unit] =
     IO.sleep(refillPeriod) >>
