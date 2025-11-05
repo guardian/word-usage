@@ -5,32 +5,28 @@ import com.gu.words.capi.CapiId
 import com.gu.words.model.*
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket.{encodedChars, lowerInclusiveValueByIndex}
-import com.gu.words.reports.MonthReport.Row
-import kantan.csv.*
 import kantan.csv.ops.*
+import kantan.csv.{RowCodec, *}
 
 import java.time.LocalDate
 
 case class MonthReport(occurrenceByWord: Map[Word, MonthReport.Occurrence]) {
   lazy val mostCommon: Seq[(Word, MonthReport.Occurrence)] = occurrenceByWord.toSeq.sortBy(_._2.freqByDay.max).reverse.take(10)
 
-  def csvRows: Seq[Row] = 
-    occurrenceByWord.toSeq.sortBy(_._1).map((word, occ) => Row(occ.freqByDay, word, occ.count, occ.firstSeenDuringRun))
+  def csvRows: Seq[(Word, MonthReport.Occurrence)] = occurrenceByWord.toSeq.sortBy(_._1)
 }
 
-object MonthReport {
-
-  def read[A: CsvSource](source: A): MonthReport = MonthReport(
-    source.readCsv[Seq, Row](rfc).flatMap(_.toOption.map(row => row.word -> Occurrence(row.count, row.freqByDay, row.firstSeenDuringRun))).toMap
-  )
-
-  case class Occurrence(count: Int, freqByDay: Seq[FreqBucket], firstSeenDuringRun: Option[CapiId] = None) {
-    lazy val dayOfFirstUseInMonth: Int = 1 + freqByDay.indexWhere(_.lowerInclusive > 0)
+given RowCodec[(Word, MonthReport.Occurrence)] =
+  RowCodec.codec[(Word, MonthReport.Occurrence), Seq[FreqBucket], Word, Int, Option[CapiId]](0, 1, 2, 3) {
+    (freqByDay, word, count, firstSeenDuringRun) => word -> MonthReport.Occurrence(count, freqByDay, firstSeenDuringRun)
+  } {
+    (word, mo) => (mo.freqByDay, word, mo.count, mo.firstSeenDuringRun)
   }
 
-  case class Row(freqByDay: Seq[FreqBucket], word: Word, count: Int, firstSeenDuringRun: Option[CapiId])
-  object Row {
-    given RowCodec[Row] = RowCodec.caseCodec(0, 1, 2, 3)(Row.apply)(row => Some(Tuple.fromProductTyped(row)))
+object MonthReport {
+  
+  case class Occurrence(count: Int, freqByDay: Seq[FreqBucket], firstSeenDuringRun: Option[CapiId] = None) {
+    lazy val dayOfFirstUseInMonth: Int = 1 + freqByDay.indexWhere(_.lowerInclusive > 0)
   }
 
   object Occurrence {

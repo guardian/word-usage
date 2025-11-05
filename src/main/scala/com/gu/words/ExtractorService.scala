@@ -6,11 +6,12 @@ import cats.syntax.all.*
 import com.gu.time.duration.formatting.*
 import com.gu.words.capi.ContentService
 import com.gu.words.model.YearMonth
-import com.gu.words.reports.{DayReport, MonthReport, WordUsage}
-import kantan.csv.{CsvConfiguration, CsvSink, HeaderEncoder}
+import com.gu.words.reports.{DayReport, MonthReport, WordUsage, given}
+import kantan.csv.ops.*
+import kantan.csv.*
 
 import java.io.BufferedInputStream
-import java.nio.file.Files.newInputStream
+import java.nio.file.Files.{newInputStream, newOutputStream}
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.{Files, Path}
 import java.time.LocalDate
@@ -19,11 +20,7 @@ import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 import scala.collection.immutable.SortedMap
 import scala.jdk.DurationConverters.*
 import scala.language.postfixOps
-import scala.util.{Random, Try, Using}
-import kantan.csv.*
-import kantan.csv.java8.*
-import kantan.csv.ops.*
-import reports.given
+import scala.util.Random
 
 extension (path: Path)
   def addExtension(suffix: String): Path = path.resolveSibling(s"${path.getFileName}.$suffix")
@@ -65,10 +62,17 @@ class ExtractorService(folder: Path, contentService: ContentService) {
   def writeCompressed[B: HeaderEncoder](path: Path, rows: IterableOnce[B]): IO[Unit] =
     IO.blocking(Files.createDirectories(path.getParent)) >> {
       val tmpPath = path.addExtension(s"${Random.alphanumeric.take(5).mkString}.tmp")
-      Resource.fromAutoCloseable(IO.blocking(new GZIPOutputStream(Files.newOutputStream(tmpPath)))).use {
+      Resource.fromAutoCloseable(IO.blocking(new GZIPOutputStream(newOutputStream(tmpPath)))).use {
         outputStream => IO.blocking(outputStream.writeCsv(rows, rfc))
       } >> IO.blocking(Files.move(tmpPath, path, REPLACE_EXISTING))
     }
+
+  def readCompressed[B: HeaderDecoder](path: Path): IO[Seq[B]] = {
+    val punk = 8 * 1024
+    Resource.fromAutoCloseable(IO.blocking(new BufferedInputStream(new GZIPInputStream(newInputStream(path), punk), 4 * punk))).use {
+      outputStream => IO.blocking(outputStream.readCsv[Seq, B](rfc).flatMap(_.toOption))
+    }
+  }
 
   private def integrateMonthDataAndUpdateSeenWordsReport(
     previouslySeen: Map[Word, WordUsage],
@@ -90,16 +94,10 @@ class ExtractorService(folder: Path, contentService: ContentService) {
   def fetchFromCapiOrLoadFromCache(yearMonth: YearMonth): EitherT[IO, Map[LocalDate, DayReport], MonthReport] =
     EitherT.right(IO.blocking(Files.isRegularFile(pathFor(yearMonth)))).flatMap { fileExists =>
       val fetchFresh = contentService.fetchDayReportsFor(yearMonth).logTime(s"$yearMonth : Fetching from CAPI")
-
-      if (fileExists) EitherT(loadCachedFile(yearMonth).map(_.toEither)).leftSemiflatMap(_ => fetchFresh)
+      if (fileExists) EitherT(loadCachedFile(yearMonth).attempt).leftSemiflatMap(_ => fetchFresh)
       else EitherT.left(fetchFresh)
     }
 
-  private def loadCachedFile(yearMonth: YearMonth): IO[Try[MonthReport]] = {
-    val punk = 8 * 1024
-    val path = pathFor(yearMonth)
-    IO.blocking {
-      Using(new BufferedInputStream(new GZIPInputStream(newInputStream(path), punk), 4 * punk))(MonthReport.read)
-    }.logTime(s"$yearMonth : Loading from disk")
-  }
+  private def loadCachedFile(yearMonth: YearMonth): IO[MonthReport] =
+    readCompressed(pathFor(yearMonth)).map(s => MonthReport(s.toMap)).logTime(s"$yearMonth : Loading from disk")
 }
