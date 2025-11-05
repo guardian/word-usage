@@ -14,15 +14,11 @@ import java.time.LocalDate
 case class MonthReport(occurrenceByWord: Map[Word, MonthReport.Occurrence]) {
   lazy val mostCommon: Seq[(Word, MonthReport.Occurrence)] = occurrenceByWord.toSeq.sortBy(_._2.freqByDay.max).reverse.take(10)
 
-  def write[A: CsvSink](sink: A): Unit = {
-    sink.writeCsv(occurrenceByWord.toSeq.sortBy(_._1).map((word, occ) => Row(occ.freqByDay, word, occ.count, occ.firstSeenDuringRun)), rfc)
-  }
+  def csvRows: Seq[Row] = 
+    occurrenceByWord.toSeq.sortBy(_._1).map((word, occ) => Row(occ.freqByDay, word, occ.count, occ.firstSeenDuringRun))
 }
 
 object MonthReport {
-
-  // https://github.com/guardian/cross-platform-navigation/pull/93
-  given RowCodec[Row] = RowCodec.caseCodec(0, 1, 2, 3)(Row.apply)(row => Some(Tuple.fromProductTyped(row)))
 
   def read[A: CsvSource](source: A): MonthReport = MonthReport(
     source.readCsv[Seq, Row](rfc).flatMap(_.toOption.map(row => row.word -> Occurrence(row.count, row.freqByDay, row.firstSeenDuringRun))).toMap
@@ -33,6 +29,9 @@ object MonthReport {
   }
 
   case class Row(freqByDay: Seq[FreqBucket], word: Word, count: Int, firstSeenDuringRun: Option[CapiId])
+  object Row {
+    given RowCodec[Row] = RowCodec.caseCodec(0, 1, 2, 3)(Row.apply)(row => Some(Tuple.fromProductTyped(row)))
+  }
 
   object Occurrence {
     case class FreqBucket(char: Char) {
@@ -65,7 +64,7 @@ object MonthReport {
     }
   }
 
-  def from(yearMonth: YearMonth, dayReportsByDay: Map[LocalDate, DayReport], previouslySeen: Map[Word, WordReport]): MonthReport = {
+  def from(yearMonth: YearMonth, dayReportsByDay: Map[LocalDate, DayReport], previouslySeen: Map[Word, WordUsage]): MonthReport = {
     require(dayReportsByDay.keys.forall(_.yearMonth == yearMonth))
     MonthReport((for {
       word <- dayReportsByDay.values.flatMap(_.occurrenceByWord.keys)
