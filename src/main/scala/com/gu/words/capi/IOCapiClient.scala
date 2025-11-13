@@ -3,18 +3,18 @@ package com.gu.words.capi
 import cats.effect.IO
 import com.gu.contentapi.client.model.Direction.Next
 import com.gu.contentapi.client.model.{ContentApiQuery, PaginatedApiQuery}
-import com.gu.contentapi.client.{ContentApiClient, Decoder, GuardianContentClient}
-import com.gu.words.{logIfSlow, logTime}
+import com.gu.contentapi.client.{Decoder, GuardianContentClient}
+import com.gu.words.logIfSlow
 import com.twitter.scrooge.ThriftStruct
 import fs2.Chunk
 import fs2.Stream.unfoldChunkLoopEval
 import retry.*
 import retry.ResultHandler.*
 import retry.RetryPolicies.*
+import sttp.client4.*
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.*
-import sttp.client4.*
 
 trait IOCapiClient {
   def getResponse[Resp <: ThriftStruct : Decoder](query: ContentApiQuery[Resp]): IO[Resp]
@@ -27,11 +27,14 @@ trait IOCapiClient {
 
 object IOCapiClient {
 
-  private val backend = DefaultSyncBackend()
-  val capiUrl = uri"https://content.guardianapis.com/"
+  private def getPerMinuteQuotaFor(apiKey: String) =
+    basicRequest.get(capiUrl.addParam("api-key", apiKey)).send(backend).header("x-ratelimit-limit-minute").get.toInt
 
-  val retryPolicy: RetryPolicy[IO, Throwable] = limitRetriesByCumulativeDelay(60.seconds, fullJitter(1.seconds))
-  val retryLogging: ErrorHandler[IO, Nothing] = retryOnAllErrors((ex, _) => IO.println(s"Retrying $ex"))
+  private def createRateLimiterAppropriateTo(apiKey: String): IO[TokenBucket] = {
+    val minuteQuota = getPerMinuteQuotaFor(apiKey)
+    IO.println(s"CAPI Quota per min: $minuteQuota") >>
+      TokenBucket.create(minuteQuota, minuteQuota / 60, 1.second)
+  }
 
   def from(apiKey: String)(using ExecutionContext): IO[IOCapiClient] = for {
     rateLimiter <- createRateLimiterAppropriateTo(apiKey)
@@ -47,12 +50,9 @@ object IOCapiClient {
     }
   }
 
-  private def createRateLimiterAppropriateTo(apiKey: String): IO[TokenBucket] = {
-    val minuteQuota = getPerMinuteQuotaFor(apiKey)
-    IO.println(s"CAPI Quota per min: $minuteQuota") >>
-      TokenBucket.create(minuteQuota, minuteQuota/60, 1.second)
-  }
+  val capiUrl = uri"https://content.guardianapis.com/"
 
-  private def getPerMinuteQuotaFor(apiKey: String) =
-    basicRequest.get(capiUrl.addParam("api-key", apiKey)).send(backend).header("x-ratelimit-limit-minute").get.toInt
+  private val backend = DefaultSyncBackend()
+  val retryPolicy: RetryPolicy[IO, Throwable] = limitRetriesByCumulativeDelay(60.seconds, fullJitter(1.seconds))
+  val retryLogging: ErrorHandler[IO, Nothing] = retryOnAllErrors((ex, _) => IO.println(s"Retrying $ex"))
 }

@@ -1,5 +1,6 @@
 package com.gu.words.reports
 
+import com.gu.words.reports.MonthReport.Occurrence.FreqBucket
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket.lowerInclusiveValueOf
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -18,6 +19,15 @@ class MonthReportTest extends AnyFlatSpec with Matchers with Inspectors with Opt
     lowerInclusiveValueOf('z') shouldBe 953
     lowerInclusiveValueOf('A') shouldBe 1144
     lowerInclusiveValueOf('Z') shouldBe 109205
+  }
+
+  "MonthReport occurrence contains" should "be good" in {
+    forAll((0 to 100) : Seq[Int]) { (value: Int) =>
+      val freqBucket = FreqBucket.forValue(value)
+      freqBucket.contains(value) shouldBe true
+      freqBucket.contains(freqBucket.lowerInclusive) shouldBe true
+      freqBucket.contains(freqBucket.lowerInclusive - 1) shouldBe false
+    }
   }
 
 }

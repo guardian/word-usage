@@ -36,7 +36,7 @@ object MonthReport {
       val lowerInclusive: Int = lowerInclusiveValueByIndex(encodingIndex)
       val upperExclusive: Int = lowerInclusiveValueByIndex(encodingIndex + 1)
 
-      def contains(value: Int): Boolean = lowerInclusive >= value && value < upperExclusive
+      def contains(value: Int): Boolean = lowerInclusive <= value && value < upperExclusive
 
       override val toString:String = char.toString
     }
