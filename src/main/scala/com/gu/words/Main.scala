@@ -4,9 +4,12 @@ import cats.data.*
 import cats.effect.*
 import cats.effect.std.Env
 import cats.syntax.all.*
-import com.gu.words.capi.{ContentService, IOCapiClient}
+import com.gu.contentapi.client.catseffect.IOCapiClient
+import com.gu.words.capi.ContentService
 import com.gu.words.model.{YearMonth, yearMonth}
 import com.gu.words.store.FileStore
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import java.nio.file.Path
 import java.time.LocalDate
@@ -17,6 +20,7 @@ type Word = String
 object Main extends IOApp {
   val CAPI_KEY_ENV_VAR = "WORD_USAGE_CAPI_KEY"
   type ValidationResult[A] = ValidatedNec[String, A]
+  implicit val logging: LoggerFactory[IO] = Slf4jFactory.create[IO]
 
   def run(args: List[String]): IO[ExitCode] = (for {
     apiKey <- EitherT.fromOptionF(Env[IO].get(CAPI_KEY_ENV_VAR), s"Please set the `$CAPI_KEY_ENV_VAR` environment variable!")

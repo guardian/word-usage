@@ -1,7 +1,7 @@
 package com.gu.words.reports
 
+import com.gu.contentapi.client.model.CapiId
 import com.gu.words.*
-import com.gu.words.capi.CapiId
 import com.gu.words.model.ContentSummary
 
 import scala.collection.immutable.SortedMap
