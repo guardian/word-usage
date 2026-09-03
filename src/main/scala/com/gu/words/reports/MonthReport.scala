@@ -1,12 +1,12 @@
 package com.gu.words.reports
 
+import com.gu.contentapi.client.model.CapiId
 import com.gu.words.*
-import com.gu.words.capi.CapiId
 import com.gu.words.model.*
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket.{encodedChars, lowerInclusiveValueByIndex}
 import kantan.csv.ops.*
-import kantan.csv.{RowCodec, *}
+import kantan.csv.*
 
 import java.time.LocalDate
 

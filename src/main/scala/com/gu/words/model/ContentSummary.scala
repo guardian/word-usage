@@ -1,10 +1,9 @@
 package com.gu.words.model
 
 import com.gu.contentapi.client.ContentApiClient
-import com.gu.contentapi.client.model.SearchQuery
+import com.gu.contentapi.client.model.{CapiId, SearchQuery}
 import com.gu.contentapi.client.model.v1.Content
 import com.gu.words.Word
-import com.gu.words.capi.CapiId
 import com.madgag.scala.collection.decorators.*
 import opennlp.tools.tokenize.{SimpleTokenizer, Tokenizer}
 

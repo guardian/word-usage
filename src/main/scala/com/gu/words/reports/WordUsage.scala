@@ -1,8 +1,8 @@
 package com.gu.words.reports
 
 import cats.effect.IO
+import com.gu.contentapi.client.model.CapiId
 import com.gu.words.Word
-import com.gu.words.capi.CapiId
 import com.gu.words.model.YearMonth
 import com.gu.words.reports.MonthReport.Occurrence.FreqBucket
 import com.gu.words.reports.WordUsage.FirstUse
